@@ -1,0 +1,77 @@
+별도 PowerShell에서 'openclaw gateway'(오픈클로) 게이트웨이를 이미 실행해 둔 상태야.
+이건 책에서 사용하는 로컬 MCP 게이트웨이고, Composio·Google 공식·기타 MCP가 아니야.
+이제 /mcp 슬래시 명령으로 Google Calendar와 Gmail을 인증할 테니,
+서비스 종류 확인이나 환경 조사 없이 다음 한 줄만 답하고 멈춰 줘:
+"/mcp 명령을 입력해 두 서비스 인증을 완료해 줘"
+
+
+
+일정 파싱 에이전트를 만들어 줘. 이름은 schedule-parser.
+사용자가 자연어 텍스트로 일정을 입력하면
+아래 정보를 자동으로 추출해야 해:
+- 날짜 (예: '다음 주 화요일' → 2026-04-07)
+- 시작 시간 / 종료 시간 (미언급 시 1시간 기본)
+- 일정 제목
+- 장소 (언급된 경우)
+- 참석자 이름 및 이메일 (이메일 미언급 시 Gmail 수발신 내역에서 자동 검색)
+- 일정 중요도 (중요/보통/낮음)
+추출 결과를 parsed_schedule.json으로 저장해 줘.
+
+
+
+중복 확인 에이전트를 만들어줘. 이름은 conflict-checker.
+parsed_schedule.json의 날짜/시간을 읽어서
+Google Calendar 연결로 내 캘린더를 조회하고
+해당 시간대에 겹치는 일정이 있는지 확인해 줘.
+확인 결과:
+- 충돌 없음: conflict_result.json에 'clear' 저장
+- 충돌 있음: 기존 일정 제목·시간 포함하여 저장
++ 대안 시간 3개도 자동 추천해 줘.
+(같은 날 앞뒤 빈 시간대 기준)
+
+
+
+캘린더 등록 에이전트를 만들어 줘. 이름은 calendar-registrar.
+conflict_result.json을 읽어서:
+- 'clear'이면: parsed_schedule.json 내용을 Google Calendar 연결로 바로 등록
+등록 결과를 calendar_result.json에 저장
+- 충돌이면: 사용자에게 아래를 물어봐.
+'기존 일정이 있습니다. 추천 시간은 13:00, 16:00, 17:00입니다.
+어느 시간으로 등록할까요? (번호 입력)'
+선택한 시간으로 일정 등록 후 calendar_result.json 저장
+
+
+
+메일 발송 에이전트를 만들어 줘. 이름은 invite-sender.
+calendar_result.json에서 등록된 일정 정보를 읽고
+parsed_schedule.json의 attendees 목록에 있는 참석자 중
+이메일이 없는 경우 Gmail 수발신 내역에서 이름으로 이메일을 자동으로 찾아 줘.
+Gmail에서도 찾지 못한 경우에는 해당 참석자는 건너뛰고 결과에 미발송 이유를 기록해 줘.
+모든 참석자에게 초대 메일을 보내 줘.
+메일 내용에 포함할 것:
+- 제목: [일정 초대] {일정 제목}
+- 일시: {날짜} {시작시간} ~ {종료시간}
+- 장소: {장소} (없으면 '미정'으로 표시)
+- Google Calendar 초대 링크
+- 회신 요청 문구
+Gmail 연결로 발송하고, 발송 결과를 mail_log.json에 저장해 줘.
+
+
+
+지금까지 만든 에이전트를 하나의 오픈클로 워크플로로 묶어 줘. 이름은 schedule-workflow.
+실행 순서:
+1. 사용자 자연어 입력받기
+2. schedule-parser 실행 -> parsed_schedule.json
+3. conflict-checker 실행 -> conflict_result.json
+4. calendar-registrar 실행 -> calendar_result.json
+5. invite-sender 실행 -> mail_log.json
+6. 완료 메시지 출력: '일정이 등록되었고 참석자에게 메일을 발송했습니다.'
+
+
+
+schedule-workflow를 실행해 줘.
+입력: '차주 금요일 오전 10시에 홍길동님, 송일님이랑
+2분기 예산 검토 회의. 회의실 A에서 1시간 30분'
+
+
+

@@ -1,0 +1,173 @@
+모니터링 설정 파일을 만들어 줘.
+파일 이름은 monitor_config.json.
+뉴스 키워드 (내 업무와 관련된 주제들):
+- 'AI 규제'
+- 'LLM 최신 동향'
+- '클라우드 보안'
+- '데이터 프라이버시'
+- '스타트업 투자'
+채용 공고 키워드 (내가 관심 있는 직무):
+- 'AI 엔지니어'
+- '프롬프트 엔지니어'
+- '데이터 사이언티스트'
+채용 공고 필터:
+- 경력: 3~7년
+- 지역: 서울, 판교, 원격 근무
+- 제외 키워드: '인턴', '신입 전용'
+텔레그램 설정 (실제 토큰·chat_id는 .env에 보관하고,
+monitor_config.json에는 환경 변수 이름만 적어 줘):
+telegram:
+bot_token_env: "TELEGRAM_BOT_TOKEN"
+chat_id_env: "TELEGRAM_CHAT_ID"
+max_message_length: 4000
+parse_mode: "MarkdownV2"
+use_emoji: true
+영향도 분석 설정 (impact-analyzer가 OpenAI API를 호출할 때 사용):
+openai:
+api_key_env: "OPENAI_API_KEY"
+model: "gpt-4o-mini"
+수집 시간: 매일 오전 8시
+각 항목에 고유 ID와 활성화 상태(true)도 포함해 줘.
+추가로, 같은 폴더에 .env 파일과 .gitignore 파일도 함께 생성해 줘.
+.env 내용:
+TELEGRAM_BOT_TOKEN=BotFather에서_발급받은_토큰
+TELEGRAM_CHAT_ID=userinfobot에서_확인한_숫자
+OPENAI_API_KEY=OpenAI_플랫폼에서_발급받은_키
+.gitignore에는 .env가 포함되도록 해 줘.
+
+
+
+뉴스 수집 에이전트를 만들어 줘. 이름은 news-collector.
+monitor_config.json의 news_keywords를 순서대로 읽어.
+각 키워드별로 아래를 수집해야 해:
+- 검색 기간: 최근 24시간 이내
+- 수집 기사 수: 키워드당 최대 5건
+- 우선 출처: 네이버뉴스, 연합뉴스, ZDNet, 블로터, 테크크런치, 매일경제, 한국경제
+- 중복 기사 제거 (제목 유사도 80% 이상이면 1건만 보존)
+각 기사에서 추출할 정보:
+- 제목
+- 출처 매체명
+- 발행 날짜/시간
+- 기사 URL
+- 본문 요약 (3문장 이내)
+수집 결과를 collected_news.json으로 저장해 줘.
+키워드별로 그룹화하고, 수집 실패한 키워드도 에러 메시지와 함께 기록해 줘.
+
+
+
+업무 영향도 분석 에이전트를 만들어 줘. 이름은 impact-analyzer.
+collected_news.json의 모든 기사를 읽어서
+각 기사별로 아래 분석을 수행해야 해:
+1. 업무 영향도 분류:
+높음 — 즉시 대응 또는 검토가 필요한 변화
+(예: 규제 시행, 핵심 기술 출시, 경쟁사 주요 발표)
+보통 — 추후 참고 또는 팀 공유가 필요한 정보
+(예: 업계 트렌드, 연구 결과, 시장 변화)
+낮음 — 배경 지식으로 알아두면 좋은 정보
+(예: 일반 현황, 통계 업데이트)
+2. 1줄 핵심 요약 (30자 이내):
+기사의 핵심 메시지만 뽑아서 작성
+3. 실무 시사점 (선택, 영향도 '높음'만):
+내 업무에 어떤 영향을 미치는지 1~2문장으로 작성
+분석 결과를 analyzed_news.json으로 저장해 줘.
+영향도별로 정렬: 높음 → 보통 → 낮음 순서로.
+분석 시 OpenAI API를 사용해 줘. 호출 절차는 반드시 다음 순서를 따라 줘.
+1. 같은 폴더의 .env 파일을 읽어 환경 변수로 등록한다.
+2. monitor_config.json의 openai.api_key_env에 적힌 이름(예: 'OPENAI_API_KEY')으로
+환경 변수를 조회해 실제 API 키를 얻는다.
+3. monitor_config.json의 openai.model에 적힌 모델명(예: 'gpt-5.4')으로
+OpenAI Chat Completions API를 호출한다.
+4. API 키가 환경 변수에 없으면 그 자리에서 에러 메시지를 출력하고 종료해.
+Claude 등 다른 모델로 임의 폴백하지 마. 사용자가 .env에 키를 추가해야 한다는
+안내를 명확히 보여 줄 것.
+
+
+
+채용 공고 수집 에이전트를 만들어 줘. 이름은 job-collector.
+monitor_config.json의 job_keywords를 읽어서
+아래 플랫폼에서 채용 공고를 수집해야 해:
+- 사람인(saramin.co.kr)
+- 원티드(wanted.co.kr)
+- 링크드인(linkedin.com/jobs)
+- 잡플래닛(jobplanet.co.kr)
+수집 조건:
+- 등록일: 최근 48시간 이내
+- 경력: config의 exp_years 범위
+- 지역: config의 location 목록
+- 제외 키워드 필터 적용
+- 중복 제거 (회사명+직무명 동일이면 1건만)
+각 공고에서 추출할 정보:
+- 회사명, 직무명, 경력 요건
+- 주요 자격 요건 (3가지 이내로 요약)
+- 우대 사항 (2가지 이내)
+- 근무지, 연봉 범위 (공개된 경우)
+- 지원 마감일, 공고 URL
+결과를 collected_jobs.json으로 저장해 줘.
+직무 키워드별로 그룹화해 줘.
+
+
+
+텔레그램 브리핑 발송 에이전트를 만들어 줘. 이름은 newsletter-sender.
+analyzed_news.json과 collected_jobs.json을 읽어서
+아래 형식의 메시지를 구성하고 Telegram Bot API sendMessage로 발송해 줘.
+메시지 헤더:
+'[데일리 브리핑] {날짜} | 뉴스 {N}건 · 채용 {M}건'
+메시지 본문 구성:
+1. 오늘의 핵심 뉴스 (영향도 '높음'만)
+각 기사: 제목 + 1줄 요약 + 실무 시사점 + 링크
+2. 업계 동향 (영향도 '보통')
+각 기사: 제목 + 1줄 요약 + 링크 (간략히)
+3. 오늘의 채용 공고
+각 공고: 회사명 + 직무명 + 경력 + 근무지 + 마감일 + 링크
+직무 키워드별로 구분하여 표시
+4. 내일 주목할 것
+수집된 뉴스 중 예정된 이벤트나 발표 일정이 있으면 요약
+조건:
+- 뉴스가 0건이면 해당 섹션 생략
+- 채용 공고가 0건이면 '오늘은 새 공고가 없습니다' 표시
+- 발송 완료 후 newsletter_log.json에 기록
+- monitor_config.json의 telegram_bot_token과 telegram_chat_id를 읽어서 발송
+
+
+
+지금까지 만든 에이전트를 하나의 오픈클로 워크플로로 묶어 줘.
+이름은 daily-briefing-workflow.
+실행 순서:
+1. news-collector 실행 → collected_news.json
+2. impact-analyzer 실행 → analyzed_news.json
+3. job-collector 실행 → collected_jobs.json
+4. newsletter-sender 실행 → 텔레그램 발송
+5. 완료 메시지 출력:
+'브리핑 발송 완료 — 뉴스 N건 / 채용 M건 / {시각}'
+수동 실행 트리거:
+- '지금 브리핑 보내줘' 입력 시 즉시 실행
+예외 처리:
+- 뉴스 수집 실패 시 전날 캐시 데이터 사용
+- 텔레그램 발송 실패 시 3분 후 1회 재시도
+
+
+
+news-monitor 폴더에 run.bat 파일을 만들고,
+Windows 작업 스케줄러에 NewsBriefing-Daily 이름으로 등록해 줘.
+run.bat 파일 내용 (아래 코드 그대로 작성):
+@echo off
+chcp 65001 > nul
+set "PYTHONIOENCODING=utf-8"
+setlocal
+set "BASE_DIR=D:\claudecode\news-monitor"
+set "LOG_DIR=%BASE_DIR%\logs"
+set "LOG_FILE=%LOG_DIR%\run.log"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+echo. >> "%LOG_FILE%"
+echo ================================================ >> "%LOG_FILE%"
+echo [%date% %time%] NewsBriefing-Daily start >> "%LOG_FILE%"
+echo ================================================ >> "%LOG_FILE%"
+set "ANTHROPIC_API_KEY="
+cd /d "%BASE_DIR%"
+call python "%BASE_DIR%\daily_briefing_workflow.py" >> "%LOG_FILE%" 2>&1
+echo [%date% %time%] NewsBriefing-Daily end (exit: %errorlevel%) >> "%LOG_FILE%"
+endlocal
+schtasks /create /tn "NewsBriefing-Daily" /tr "cmd /c D:\claudecode\news-monitor\run.bat" /sc
+daily /st 16:30 /f
+등록 후 schtasks /query /tn "NewsBriefing-Daily"으로 확인해 줘.
+run.bat 파일은 반드시 CRLF(Windows) 줄 끝 형식으로 저장해 줘.

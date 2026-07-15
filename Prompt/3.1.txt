@@ -1,0 +1,176 @@
+프로젝트 폴더에 .env 파일을 만들어 줘.
+파일 경로: D:\claudecode\price-tracker\.env
+파일 내용:
+---
+# 네이버 개발자센터에서 발급
+NAVER_CLIENT_ID=여기에_네이버_Client_ID_입력
+NAVER_CLIENT_SECRET=여기에_네이버_Client_Secret_입력
+# 텔레그램 봇 토큰 (@BotFather)
+TELEGRAM_BOT_TOKEN=여기에_봇토큰_입력
+# 메시지를 받을 채팅 ID (@userinfobot)
+TELEGRAM_CHAT_ID=여기에_chat_id_입력
+---
+기존 파일이 있으면 덮어쓰지 말고 사용자에게 알려 줘.
+파일 생성 후 .gitignore에도 .env를 추가해 줘.
+
+
+
+쇼핑 가격 추적 목록 파일을 만들어 줘.
+파일 이름은 watchlist.json.
+아래 상품들을 추적 목록에 등록해 줘:
+상품 1:
+이름: 애플 에어팟 4세대
+현재 예상 가격: 200,000원
+목표 가격: 250,000원
+상품 2:
+이름: 다이슨 에어랩
+현재 예상 가격: 650,000원
+목표 가격: 550,000원
+각 상품에 고유 ID, 등록 날짜, 활성화 상태(true)도 포함해 줘.
+
+
+
+가격 수집 에이전트를 만들어 줘. 이름은 price-scraper.
+watchlist.json에 등록된 상품을 네이버 쇼핑 검색 API를 통해
+현재 판매 가격을 조회해야 해.
+[전제]
+.env 파일은 이미 만들어져 있으니, 새로 만들거나 수정하지 말고, 기존 파일을 읽기만 함.
+API 정보:
+- 엔드포인트: https://openapi.naver.com/v1/search/shop.json
+- 인증 헤더: X-Naver-Client-Id, X-Naver-Client-Secret
+- 키는 프로젝트 폴더의 .env 파일에서 NAVER_CLIENT_ID,
+NAVER_CLIENT_SECRET를 읽어서 사용
+- 호출 파라미터: query=상품명, display=10, sort=sim (유사도순)
+키 사전 검증 (API 호출 전에 먼저 확인):
+- .env 파일이 없으면 → 모든 상품을 success: false,
+error: '.env 파일 없음 (Step 2를 먼저 완료하세요)'로 기록 후 종료
+- 키가 비어 있거나 '여기에_', 'YOUR_' 같은 플레이스홀더 그대로면
+→ success: false, error: '.env에 실제 API 키 미설정'로 기록 후
+API 호출 자체를 시도하지 않음 (불필요한 401 호출 방지)
+가격 선택 규칙 (미끼 상품 필터링):
+- 응답 10개 중 watchlist의 '현재 예상 가격'의 30%~150%
+범위에 들어오는 첫 항목을 채택
+- 범위 내 결과가 없으면 success: false,
+error: '정상 가격대 결과 없음 (예상가의 30%~150% 범위)'
+수집 결과에 포함할 것:
+- 상품 ID (watchlist.json의 ID)
+- 수집 날짜/시간
+- 채택 가격 (lprice, 원)
+- 채택된 상품명 (title, HTML 태그 제거)
+- 판매처 (mallName)
+- 상품 링크 (link)
+결과를 scraped_prices.json으로 저장하고
+수집 성공/실패 여부도 함께 기록해 줘.
+가격을 찾지 못하거나 API 호출이 실패한 경우 null로 표시하고
+에러 메시지도 함께 저장해 줘.
+
+
+
+가격 이력 기록 에이전트를 만들어 줘. 이름은 price-recorder.
+scraped_prices.json을 읽어서 prices.csv에 아래 형식으로 기록해 줘:
+CSV 컬럼:
+수집일시, 상품ID, 상품명, 수집가격(원),
+목표가격(원), 목표달성여부(Y/N),
+할인정보, 재고상태, 전일대비변동(원)
+규칙:
+- prices.csv가 없으면 헤더 포함하여 새로 생성
+- 이미 있으면 기존 데이터 뒤에 새 행만 추가
+- '전일대비변동'은 직전 수집 가격과 비교해서 계산
+(첫 수집이면 '-'으로 표시)
+기록 후 각 상품의 가격 통계도 계산해 줘:
+- 역대 최저가 / 최고가 / 평균가
+- 목표가까지 남은 금액
+- 최근 7일간 가격 추세 (하락/상승/유지)
+결과를 price_stats.json으로 저장해 줘.
+
+
+
+가격 알림 에이전트를 만들어 줘. 이름은 price-alert.
+[전제]
+.env 파일은 이미 만들어져 있으니 새로 만들거나 수정하지 말고, 기존 파일을 읽기만 함.
+price_stats.json을 읽어서 목표가 도달 조건을 아래와 같이 체크해 줘.
+설정값 로드:
+- 텔레그램 봇 토큰과 채팅 ID는 프로젝트 폴더의 .env 파일에서
+TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID를 읽어서 사용
+- 외부 패키지(requests 등) 설치 없이 표준 라이브러리(urllib)로 호출
+키 사전 검증 (텔레그램 호출 전에 먼저 확인):
+- .env 파일이 없으면 → 발송 시도하지 말고 alert_history.json에
+status: 'skipped_no_env', error: '.env 파일 없음 (Step 3을 먼저 완료하세요)' 기록
+- 토큰/채팅 ID가 비어 있거나 '여기에_', 'YOUR_' 같은 플레이스홀더면
+→ 발송 시도하지 말고 status: 'skipped_missing_credentials',
+error: '.env에 실제 텔레그램 정보 미설정' 기록
+(불필요한 401 호출 방지)
+알림 조건:
+1. 목표가 달성 (수집 가격 ≤ 목표 가격):
+메시지 제목: [최저가 알림] {상품명} 목표가 달성!
+내용:
+- 현재 가격: {수집가격}원
+- 목표 가격: {목표가격}원
+- 절약 금액: {목표가격 - 수집가격}원
+- 구매 링크: {상품 URL}
+- 수집 시각: {날짜/시간}
+- '지금 구매하면 {절약금액}원 절약!' 문구
+2. 가격 10% 이상 하락 (목표가 미달성이지만 큰 폭 하락):
+메시지 제목: [가격 하락] {상품명} 가격이 내렸어요
+내용: 전일 대비 하락폭, 현재 가격, 구매 링크
+발송 결과를 alert_history.json에 기록해 줘.
+그리고 조건을 충족하면 매번 발송해 줘. (중복 방지 없음)
+
+
+
+가격 추이 시각화 에이전트를 만들어 줘. 이름은 price-chart.
+prices.csv를 읽어서 price_chart.html을 생성해 줘.
+포함할 내용:
+1. 상품별 가격 변동 선 그래프:
+- x축: 수집 날짜, y축: 가격(원)
+- 목표 가격을 빨간 점선으로 표시
+- 역대 최저가 지점에 별 마크 표시
+- 상품마다 다른 색상의 선
+2. 현재 상태 요약 카드 (상품별):
+- 현재가 / 목표가 / 달성률(%) / 역대 최저가
+- 목표 달성 여부 배지 (달성/추적 중)
+3. 최근 가격 변동 내역 테이블 (최신 10건)
+- 파이썬으로 순수 HTML+CSS+JS로 생성해 줘.
+
+
+
+지금까지 만든 에이전트를 하나의 오픈클로 워크플로로 묶어 줘.
+이름은 price-track-workflow.
+[중요] 이 워크플로는 클로드 코드의 슬래시 명령어(/price-track-workflow)로
+호출되므로, 반드시 다음 경로에 생성해 줘:
+.claude/commands/price-track-workflow.md
+(.claude/commands/ 폴더가 없으면 함께 생성)
+실행 순서:
+1. price-scraper 실행 → scraped_prices.json 생성
+2. price-recorder 실행 → prices.csv 기록 갱신
+3. price-alert 실행 → 목표가 달성 여부 확인 및 알림 발송
+4. price-chart 실행 → price_chart.html 갱신
+5. 완료 메시지 출력: '수집 완료 - [날짜/시간] / 추적 중 상품 N개'
+수동 실행 트리거:
+- '지금 가격 확인해 줘' 입력 시 즉시 실행
+- 슬래시 명령어로 직접 호출: /price-track-workflow
+
+
+
+price-tracker 폴더에 run.bat 파일을 만들고,
+Windows 작업 스케줄러에 PriceTracker-Daily 이름으로 등록해 줘.
+run.bat 파일 내용 (아래 코드 그대로 작성):
+@echo off
+setlocal
+set "BASE_DIR=D:\claudecode\price-tracker"
+set "LOG_DIR=%BASE_DIR%\logs"
+set "LOG_FILE=%LOG_DIR%\run.log"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+echo. >> "%LOG_FILE%"
+echo ================================================ >> "%LOG_FILE%"
+echo [%date% %time%] PriceTracker-Daily start >> "%LOG_FILE%"
+echo ================================================ >> "%LOG_FILE%"
+set "ANTHROPIC_API_KEY="
+cd /d "%BASE_DIR%"
+call claude -p "/price-track-workflow" --permission-mode bypassPermissions >> "%LOG_FILE%" 2>&1
+echo [%date% %time%] PriceTracker-Daily end (exit: %errorlevel%) >> "%LOG_FILE%"
+endlocal
+schtasks /create /tn "PriceTracker-Daily" /tr "cmd /c D:\claudecode\price-tracker\run.bat" /sc
+daily /st 16:45 /f
+등록 후 schtasks /query /tn \"PriceTracker-Daily\"으로 확인해 줘.
+run.bat 파일은 반드시 CRLF(Windows) 줄 끝 형식으로 저장해 줘.

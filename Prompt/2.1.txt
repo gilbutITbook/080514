@@ -1,0 +1,131 @@
+mail_config.json 파일을 생성해 줘.
+mail_config.json 내용:
+- check_interval: 180 (분 단위 확인 주기, 3시간 = 180분)
+- max_emails: 20 (1회 처리할 최대 메일 수)
+- urgent_keywords: ["긴급", "즉시", "오늘까지", "urgent", "ASAP", "deadline"]
+- important_senders: ["boss@company.com", "client@partner.com"] (중요 발신자)
+- skip_labels: ["Promotions", "Social", "Spam"] (건너뛸 라벨)
+- reply_language: "Korean" (회신 언어)
+- save_drafts: true (Gmail 초안함에 자동 저장)
+- telegram:
+bot_token: "여기에_봇_토큰_입력" (BotFather에서 발급받은 토큰)
+chat_id: "여기에_chat_id_입력" (@userinfobot에서 확인한 숫자)
+
+
+
+agents/mail-classifier.md 파일을 오픈클로 에이전트 형식으로 만들어 줘.
+이 에이전트는:
+- Gmail 연결을 사용해 받은 편지함의 읽지 않은 메일을 가져온다.
+- mail_config.json의 설정을 읽어서 처리 기준으로 사용한다.
+- 각 메일을 다음 기준으로 분류한다:
+· 긴급: urgent_keywords가 제목에 포함되거나 important_senders에서 발신
+· 중요: 업무 관련 요청, 회의 일정, 파일 첨부 메일
+· 일반: 공지사항, 뉴스레터, 기타 메일
+- 분류 결과를 JSON 형식으로 출력한다: {id, subject, sender, priority, reason}
+- skip_labels에 해당하는 메일은 건너뛴다.
+- OpenAI gpt-5.4를 활용해서 메일 본문의 전체 맥락과 발신자 의도를 분석한다.
+gpt-5.4에게 메일 제목+본문 200자를 전달하고 긴급/중요/일반 중 하나로 분류 +
+분류 이유 한 문장을 반환받아, 키워드 분류 결과와 비교 후
+신뢰도 높은 결과를 최종 분류로 사용한다
+에이전트 정의 파일(.md)의 YAML 프런트매터에는
+name, description, tools와 함께 model: gpt-5.4를 반드시 포함해 줘.
+
+
+
+agents/reply-drafter.md 파일을 오픈클로 에이전트 형식으로 만들어 줘.
+이 에이전트는:
+- mail-classifier가 분류한 메일 정보를 입력받는다.
+- 중요도와 메일 내용을 분석해 상황에 맞는 회신 초안을 작성한다:
+· 긴급: 격식체, 즉시 처리 의사 표명, 구체적인 처리 계획 포함
+· 중요: 정중한 어조, 요청 사항 확인, 처리 일정 안내
+· 일반: 간단한 확인 인사 또는 감사 표현
+- 회신 초안에 포함할 내용: 인사말, 메일 수신 확인, 핵심 답변, 다음 행동 계획, 서명
+- save_drafts가 true이면 Gmail 초안함에 자동 저장한다.
+- 결과를 {id, subject, priority, draft_preview, saved_to_drafts}로 반환한다.
+- gpt-5.4를 활용해 회신 초안을 생성한다. 메일 제목·발신자·본문 전체·중요도를 전달하고,
+중요도에 맞는 어조(격식체/정중체/간략체)와 구성(인사말, 수신 확인, 핵심 답변,
+다음 행동 계획, 서명)으로 자연스러운 한국어 회신 초안을 생성해 반환받는다.
+에이전트 정의 파일(.md)의 YAML 프런트매터에는
+name, description, tools와 함께 model: gpt-5.4를 반드시 포함해 줘.
+
+
+
+workflows/mail-workflow.md 파일을 오픈클로 워크플로 형식으로 만들어 줘.
+이 워크플로는:
+1. mail-classifier 에이전트를 실행해 메일을 분류한다.
+2. 분류 결과를 reply-drafter 에이전트에 전달해 초안을 생성한다.
+3. 처리 완료 후 요약 통계를 출력한다:
+- 총 처리 메일 수
+- 중요도별 메일 수 (긴급/중요/일반)
+- 초안 저장 완료 수
+- 처리 소요 시간
+4. 중요도별 메일 목록을 모두 출력한다. (긴급 → 중요 → 일반 순서로, 각 항목에 발신자와 제목 표시)
+5. 분류 결과를 텔레그램으로 전송한다:
+- mail_config.json에서 telegram.bot_token과 telegram.chat_id를 읽는다.
+- Telegram Bot API sendMessage를 호출한다. (parse_mode: HTML)
+- 한글이 깨지지 않도록 메시지 본문을 UTF-8로 인코딩해 전송한다. PowerShell로
+호출할 경우 요청 본문(JSON)을 [System.Text.Encoding]::UTF8.GetBytes()로 바이트
+배열로 변환해 -Body에 전달하고, -ContentType 'application/json; charset=utf-8'를
+지정한다. (문자열을 그대로 -Body로 넘기면 한글이 시스템 코드 페이지로 전송돼 깨진다.)
+- 긴급 메일은 건별로 즉시 전송. 메시지 형식:
+[긴급] 발신자: {sender}
+제목: {subject}
+내용 요약: {본문 핵심 2~3문장}
+분류 이유: {reason}
+- 중요 메일은 목록으로 묶어 한 번에 전송. 메시지 형식:
+[중요 메일 {n}건]
+1. {sender} — {subject} / 요약: {본문 핵심 한 문장}
+2. {sender} — {subject} / 요약: {본문 핵심 한 문장}
+- 처리 완료 후 전체 요약도 전송한다. 건수 요약 줄에 이어, 분류된 메일 목록을
+긴급 → 중요 → 일반 순서로 포함한다. 각 메일은 "발신자 — 제목" 한 줄로 표시하되,
+메일과 메일 사이에 빈 줄을 한 줄 넣어 구분한다. 해당 등급의 메일이 없으면
+"(없음)"으로 표시한다. 메시지 형식:
+메일 처리 완료 | 긴급 {n}건 중요 {n}건 일반 {n}건 | 소요 {n}초
+[긴급]
+(없음)
+[중요]
+(없음)
+[일반]
+{sender} — {subject}
+{sender} — {subject}
+
+
+
+workflows/mail-workflow.md 워크플로를 한 번 실행해 줘. 실행 후 다음 4가지를 보고해 줘:
+1. total 메일 수와 (긴급+중요+일반)의 합이 일치하는가
+(불일치 시 어떤 메일이 중복 집계됐는지 출력)
+2. 텔레그램 메시지의 한국어(긴급/중요/일반/본문 한 줄 요약 등)가 깨지지 않고 정상 표시되었는가
+(Telegram API 응답 본문 일부를 함께 출력)
+3. 생성된 mail-classifier.md와 reply-drafter.md의 프런트매터에 model: gpt-5.4가 지정돼 있는가
+(해당 .md의 프런트매터를 발췌해서 보여 줘)
+4. Gmail 초안함에 긴급·중요 메일에 대한 회신 초안만 저장되었는가
+(일반 메일은 초안이 없어야 함)
+
+
+
+mail-agent 폴더의 run.bat 파일을 MailProcessor-3h 이름으로 3시간 주기로 등록해 줘.
+run.bat 파일 내용 (아래 코드 그대로 작성):
+@echo off
+setlocal
+set "BASE_DIR=D:\claudecode\mail-agent"
+set "LOG_DIR=%BASE_DIR%\logs"
+set "LOG_FILE=%LOG_DIR%\run.log"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
+echo. >> "%LOG_FILE%"
+echo ================================================ >> "%LOG_FILE%"
+echo [%date% %time%] MailAgent run start >> "%LOG_FILE%"
+echo ================================================ >> "%LOG_FILE%"
+set "ANTHROPIC_API_KEY="
+cd /d "%BASE_DIR%"
+where claude >nul 2>&1 || set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+call claude -p "workflows/mail-workflow.md 워크플로를 한 번 실행해 줘." --permission-mode
+bypassPermissions >> "%LOG_FILE%" 2>&1
+echo [%date% %time%] MailAgent run end (exit: %errorlevel%) >> "%LOG_FILE%"
+endlocal
+schtasks /create /tn "MailProcessor-3h" /tr "cmd /c D:\claudecode\mail-agent\run.bat" /sc
+hourly /mo 3 /st 08:00 /f
+등록 후 schtasks /query /tn "MailProcessor-3h"으로 확인해 줘.
+run.bat 파일은 반드시 CRLF(Windows) 줄 끝 형식으로 저장해 줘.
+
+
+
